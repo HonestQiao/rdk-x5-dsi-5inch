@@ -1,0 +1,15 @@
+#!/bin/bash
+# RDK X5 DFR0550-V1 5寸DSI屏显示配置
+# 放置到 ~/.xprofile 实现登录自动配置
+
+sleep 1
+
+# 关闭HDMI输出
+xrandr --output HDMI-1 --off
+
+# 设置DSI为主显示器，并修正显示比例
+# 原始分辨率800x480，横向拉伸1.067倍修正比例
+xrandr --output DSI-1 --mode 800x480 --scale 1.067x1.0 --primary
+
+# 开启背光（亮度0-255）
+echo 200 > /sys/class/backlight/panel_backlight/brightness

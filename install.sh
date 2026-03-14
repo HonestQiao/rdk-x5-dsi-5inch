@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
 echo -e "${GREEN}====================================${NC}"
 echo -e "${GREEN}  RDK X5 DSI 5寸屏适配安装脚本${NC}"
@@ -31,39 +31,28 @@ if ! grep -q "rdkx5" /proc/device-tree/model 2>/dev/null; then
     fi
 fi
 
-# 获取实际用户名（非root）
-REAL_USER=${SUDO_USER:-$USER}
-if [ "$REAL_USER" = "root" ]; then
-    # 尝试推断普通用户
-    for user in sunrise ubuntu pi; do
-        if [ -d "/home/$user" ]; then
-            REAL_USER="$user"
-            break
-        fi
-    done
+echo -e "${YELLOW}[1/5] 检查依赖...${NC}"
+
+# 检查 dtc 是否安装
+if ! command -v dtc > /dev/null 2>&1; then
+    echo -e "${RED}错误: 未找到 dtc (设备树编译器)${NC}"
+    echo "请安装: sudo apt-get install device-tree-compiler"
+    exit 1
 fi
 
-echo -e "${YELLOW}[1/6] 检查依赖...${NC}"
+echo -e "${YELLOW}[2/5] 编译设备树 overlay...${NC}"
 
-# 检查必要文件
-if [ ! -f "$SCRIPT_DIR/dsi-dfrobot-v1.dtbo" ]; then
-    if [ -f "$SCRIPT_DIR/dsi-dfrobot-v1.dts" ]; then
-        echo -e "${YELLOW}编译设备树 overlay...${NC}"
-        if command -v dtc >/dev/null 2>&1; then
-            dtc -I dts -O dtb -o "$SCRIPT_DIR/dsi-dfrobot-v1.dtbo" "$SCRIPT_DIR/dsi-dfrobot-v1.dts" 2>&1 || {
-                echo -e "${YELLOW}编译警告 (通常可忽略)...${NC}"
-            }
-        else
-            echo -e "${RED}错误: 未找到 dtc，且 .dtbo 文件不存在${NC}"
-            exit 1
-        fi
-    else
-        echo -e "${RED}错误: 找不到 dsi-dfrobot-v1.dtbo 或 dsi-dfrobot-v1.dts${NC}"
-        exit 1
-    fi
+# 编译 DTS 为 DTBO
+if [ -f "$SCRIPT_DIR/dsi-dfrobot-v1.dts" ]; then
+    dtc -I dts -O dtb -o "$SCRIPT_DIR/dsi-dfrobot-v1.dtbo" "$SCRIPT_DIR/dsi-dfrobot-v1.dts" 2>&1 || {
+        echo -e "${YELLOW}编译警告 (通常可忽略)...${NC}"
+    }
+else
+    echo -e "${RED}错误: 找不到 dsi-dfrobot-v1.dts${NC}"
+    exit 1
 fi
 
-echo -e "${YELLOW}[2/6] 安装设备树 overlay...${NC}"
+echo -e "${YELLOW}[3/5] 安装设备树 overlay...${NC}"
 
 # 复制 dtbo 到 /boot/overlays/
 cp "$SCRIPT_DIR/dsi-dfrobot-v1.dtbo" /boot/overlays/
@@ -72,78 +61,91 @@ chmod 644 /boot/overlays/dsi-dfrobot-v1.dtbo
 # 配置 config.txt
 CONFIG_FILE="/boot/config.txt"
 if [ -f "$CONFIG_FILE" ]; then
+    # 备份原配置
     cp "$CONFIG_FILE" "$CONFIG_FILE.backup.$(date +%Y%m%d%H%M%S)"
+
     # 移除旧的 dsi overlay 配置
     sed -i '/^dtoverlay=dsi-/d' "$CONFIG_FILE"
+
     # 添加新的配置
     echo "dtoverlay=dsi-dfrobot-v1" >> "$CONFIG_FILE"
+
+    echo -e "${GREEN}  已配置: dtoverlay=dsi-dfrobot-v1${NC}"
 else
     echo "dtoverlay=dsi-dfrobot-v1" > "$CONFIG_FILE"
-fi
-echo -e "${GREEN}  已配置: dtoverlay=dsi-dfrobot-v1${NC}"
-
-echo -e "${YELLOW}[3/6] 安装 LightDM 脚本...${NC}"
-
-# 复制脚本
-cp "$SCRIPT_DIR/dsi-fix.sh" /usr/local/bin/
-cp "$SCRIPT_DIR/dsi-session-fix.sh" /usr/local/bin/
-chmod +x /usr/local/bin/dsi-fix.sh /usr/local/bin/dsi-session-fix.sh
-
-# 创建 LightDM 配置
-mkdir -p /etc/lightdm/lightdm.conf.d
-cat > /etc/lightdm/lightdm.conf.d/99-dsi-fix.conf << 'EOF'
-[Seat:*]
-display-setup-script=/usr/local/bin/dsi-fix.sh
-session-setup-script=/usr/local/bin/dsi-session-fix.sh
-EOF
-
-echo -e "${GREEN}  已配置 LightDM 脚本${NC}"
-
-echo -e "${YELLOW}[4/6] 配置 sudo 权限...${NC}"
-
-# 创建 sudoers 规则（免密码设置背光）
-cat > /etc/sudoers.d/99-dsi-backlight << EOF
-$REAL_USER ALL=(ALL) NOPASSWD: /bin/tee /sys/class/backlight/panel_backlight/brightness
-$REAL_USER ALL=(ALL) NOPASSWD: /usr/bin/tee /sys/class/backlight/panel_backlight/brightness
-EOF
-chmod 440 /etc/sudoers.d/99-dsi-backlight
-
-echo -e "${GREEN}  已配置 sudo 权限${NC}"
-
-echo -e "${YELLOW}[5/6] 删除冲突配置...${NC}"
-
-# 删除 ~/.xprofile（如果存在）
-if [ -f "/home/$REAL_USER/.xprofile" ]; then
-    mv "/home/$REAL_USER/.xprofile" "/home/$REAL_USER/.xprofile.backup.$(date +%Y%m%d%H%M%S)"
-    echo -e "${GREEN}  已备份并删除 ~/.xprofile${NC}"
+    echo -e "${GREEN}  已创建配置: $CONFIG_FILE${NC}"
 fi
 
-# 清理可能冲突的 rc.local 配置
+echo -e "${YELLOW}[4/5] 配置背光自动开启...${NC}"
+
+# 配置 rc.local
 RC_LOCAL="/etc/rc.local"
 if [ -f "$RC_LOCAL" ]; then
     # 备份原配置
-    cp "$RC_LOCAL" "$RC_LOCAL.backup.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
+    cp "$RC_LOCAL" "$RC_LOCAL.backup.$(date +%Y%m%d%H%M%S)"
+
+    # 移除旧的背光配置
+    sed -i '/panel_backlight/d' "$RC_LOCAL"
+
+    # 在 exit 0 之前添加背光配置
+    sed -i '/^exit 0/i echo 200 > /sys/class/backlight/panel_backlight/brightness 2>/dev/null || true' "$RC_LOCAL"
+
+    echo -e "${GREEN}  已更新: $RC_LOCAL${NC}"
+else
+    # 创建新的 rc.local
+    cat > "$RC_LOCAL" <> 'EOF'
+#!/bin/bash -e
+# RDK X5 DSI 5寸屏背光配置
+
+# 开启DSI面板背光（亮度范围 0-255）
+echo 200 > /sys/class/backlight/panel_backlight/brightness 2>/dev/null || true
+
+exit 0
+EOF
+    chmod +x "$RC_LOCAL"
+    echo -e "${GREEN}  已创建: $RC_LOCAL${NC}"
 fi
 
-echo -e "${YELLOW}[6/6] 清理完成...${NC}"
-echo -e "${GREEN}  安装准备就绪${NC}"
+echo -e "${YELLOW}[5/5] 配置 X11 显示...${NC}"
+
+# 确定当前用户（非root）
+CURRENT_USER=${SUDO_USER:-$USER}
+if [ "$CURRENT_USER" = "root" ]; then
+    # 尝试从 HOME 目录推断用户
+    for user in sunrise ubuntu pi; do
+        if [ -d "/home/$user" ]; then
+            CURRENT_USER="$user"
+            break
+        fi
+    done
+fi
+
+USER_HOME="/home/$CURRENT_USER"
+XPROFILE="$USER_HOME/.xprofile"
+
+if [ -f "$SCRIPT_DIR/xprofile" ]; then
+    cp "$SCRIPT_DIR/xprofile" "$XPROFILE"
+    chmod +x "$XPROFILE"
+    chown "$CURRENT_USER:$CURRENT_USER" "$XPROFILE"
+    echo -e "${GREEN}  已配置: ~/.xprofile (用户: $CURRENT_USER)${NC}"
+else
+    echo -e "${YELLOW}  警告: 未找到 xprofile 模板，跳过 X11 配置${NC}"
+fi
 
 echo ""
 echo -e "${GREEN}====================================${NC}"
 echo -e "${GREEN}  安装完成!${NC}"
 echo -e "${GREEN}====================================${NC}"
 echo ""
-echo "请执行: sudo reboot"
+echo "请执行以下操作："
 echo ""
-echo "重启后:"
-echo "  - 5寸屏应自动显示桌面"
-echo "  - 分辨率为 800x480"
-echo "  - 触摸应正常工作"
+echo "  1. 重启系统: sudo reboot"
+echo "  2. 重启后检查显示: xrandr --listmonitors"
 echo ""
 echo "显示切换命令:"
-echo "  xrandr --output HDMI-1 --off && xrandr --output DSI-1 --auto    # 切换到DSI"
-echo "  xrandr --output DSI-1 --off && xrandr --output HDMI-1 --auto     # 切换到HDMI"
-echo "  echo 200 | sudo tee /sys/class/backlight/panel_backlight/brightness  # 设置背光"
+echo "  - 切换到5寸屏: xrandr --output HDMI-1 --off; xrandr --output DSI-1 --auto"
+echo "  - 切换到HDMI:  xrandr --output DSI-1 --off; xrandr --output HDMI-1 --auto"
+echo "  - 调整背光:    echo 0-255 > /sys/class/backlight/panel_backlight/brightness"
 echo ""
 echo -e "${YELLOW}注意: RDK X5 只能同时驱动一个显示 (DSI 或 HDMI)${NC}"
 echo ""
