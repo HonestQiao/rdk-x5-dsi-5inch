@@ -116,6 +116,27 @@ echo 200 > /sys/class/backlight/panel_backlight/brightness
 - **RDK X5 硬件限制**：只能同时驱动一个显示输出（DSI 或 HDMI）
 - 使用上述切换命令进行切换
 
+### 5. 重启后黑屏/暗屏，但有背光变化（红绿蓝白）
+- **现象**：开机有背光变化，但无法显示桌面
+- **原因**：内核版本过旧（12月8日前）或 X11 配置错误
+- **解决**：
+  1. 升级系统：`sudo apt update && sudo apt upgrade -y`
+  2. 重启：`sudo reboot`
+  3. 如仍有问题，检查 Xorg 日志：`cat /var/log/Xorg.0.log | grep -iE "(EE|error)"`
+  4. 删除可能冲突的 X11 配置：`sudo rm /etc/X11/xorg.conf.d/2-dr-accel.conf`
+
+### 6. 登录时提示 ".xprofile: 权限不够"
+- **原因**：普通用户无法直接写入背光设备
+- **解决**：已在新版 xprofile 中使用 `sudo` 执行背光设置
+- **手动修复**：编辑 `~/.xprofile`，将背光设置改为：
+  ```bash
+  sudo sh -c "echo 200 > /sys/class/backlight/panel_backlight/brightness" 2>/dev/null || true
+  ```
+
+### 7. 提示 "output HDMI-1 not found"
+- **原因**：某些固件版本 HDMI 设备名称不同
+- **解决**：新版 xprofile 已添加 `2>/dev/null || true` 忽略此错误
+
 ## 技术细节
 
 ### 驱动选择
