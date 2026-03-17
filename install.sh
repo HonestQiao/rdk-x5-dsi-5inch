@@ -120,17 +120,54 @@ if [ "$CURRENT_USER" = "root" ]; then
     done
 fi
 
-USER_HOME="/home/$CURRENT_USER"
-XPROFILE="$USER_HOME/.xprofile"
+echo ""
+echo "请选择 X11 显示配置方案:"
+echo "  1) LightDM 自动修复 (推荐，解决重启黑屏问题)"
+echo "  2) 用户配置文件 (~/.xprofile)"
+echo "  3) 跳过 X11 配置"
+read -r -p "请输入选项 [1-3]: " x11_choice
 
-if [ -f "$SCRIPT_DIR/xprofile" ]; then
-    cp "$SCRIPT_DIR/xprofile" "$XPROFILE"
-    chmod +x "$XPROFILE"
-    chown "$CURRENT_USER:$CURRENT_USER" "$XPROFILE"
-    echo -e "${GREEN}  已配置: ~/.xprofile (用户: $CURRENT_USER)${NC}"
-else
-    echo -e "${YELLOW}  警告: 未找到 xprofile 模板，跳过 X11 配置${NC}"
-fi
+case "$x11_choice" in
+    1)
+        echo -e "${YELLOW}  安装 LightDM 自动修复脚本...${NC}"
+        cp "$SCRIPT_DIR/lightdm-session-fix.sh" /usr/local/bin/
+        chmod +x /usr/local/bin/lightdm-session-fix.sh
+
+        # 创建 LightDM 配置
+        mkdir -p /etc/lightdm/lightdm.conf.d/
+        cat > /etc/lightdm/lightdm.conf.d/99-dsi-session-fix.conf << 'EOF'
+[Seat:*]
+session-setup-script=/usr/local/bin/lightdm-session-fix.sh
+EOF
+        echo -e "${GREEN}  已配置: LightDM session-setup-script${NC}"
+        ;;
+    2)
+        USER_HOME="/home/$CURRENT_USER"
+        XPROFILE="$USER_HOME/.xprofile"
+
+        if [ -f "$SCRIPT_DIR/xprofile" ]; then
+            cp "$SCRIPT_DIR/xprofile" "$XPROFILE"
+            chmod +x "$XPROFILE"
+            chown "$CURRENT_USER:$CURRENT_USER" "$XPROFILE"
+            echo -e "${GREEN}  已配置: ~/.xprofile (用户: $CURRENT_USER)${NC}"
+        else
+            echo -e "${YELLOW}  警告: 未找到 xprofile 模板，跳过 X11 配置${NC}"
+        fi
+        ;;
+    3)
+        echo -e "${YELLOW}  跳过 X11 配置${NC}"
+        ;;
+    *)
+        echo -e "${YELLOW}  无效选项，使用默认方案 (LightDM)...${NC}"
+        cp "$SCRIPT_DIR/lightdm-session-fix.sh" /usr/local/bin/
+        chmod +x /usr/local/bin/lightdm-session-fix.sh
+        mkdir -p /etc/lightdm/lightdm.conf.d/
+        cat > /etc/lightdm/lightdm.conf.d/99-dsi-session-fix.conf << 'EOF'
+[Seat:*]
+session-setup-script=/usr/local/bin/lightdm-session-fix.sh
+EOF
+        ;;
+esac
 
 echo ""
 echo -e "${GREEN}====================================${NC}"

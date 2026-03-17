@@ -1,15 +1,22 @@
 #!/bin/bash
 # RDK X5 DFR0550-V1 5寸DSI屏显示配置
 # 放置到 ~/.xprofile 实现登录自动配置
+#
+# 注意：如果重启后黑屏，请改用 LightDM session-setup-script 方案
+# 详见 README.md 中的 "方案 A"
 
-sleep 1
+sleep 2
 
-# 关闭HDMI输出（忽略错误，兼容无HDMI的情况）
+# 先关闭DSI再重新启用（解决初始化问题）
+xrandr --output DSI-1 --off 2>/dev/null || true
+sleep 0.5
+xrandr --output DSI-1 --auto 2>/dev/null || true
+
+# 关闭HDMI输出（忽略错误）
 xrandr --output HDMI-1 --off 2>/dev/null || true
 
-# 设置DSI为主显示器，并修正显示比例
-# 原始分辨率800x480，横向拉伸1.067倍修正比例
+# 设置DSI为主显示器
 xrandr --output DSI-1 --mode 800x480 --scale 1.067x1.0 --primary 2>/dev/null || true
 
-# 开启背光（使用sudo，因为普通用户无权限直接写入）
+# 开启背光
 sudo sh -c "echo 200 > /sys/class/backlight/panel_backlight/brightness" 2>/dev/null || true

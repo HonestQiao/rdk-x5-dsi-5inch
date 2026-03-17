@@ -17,8 +17,9 @@
 | `dsi-dfrobot-v1.dts` | 设备树 overlay 源码 |
 | `dsi-dfrobot-v1.dtbo` | 编译后的设备树 overlay（二进制） |
 | `install.sh` | 一键安装脚本 |
-| `xprofile` | X11 显示配置文件 |
+| `xprofile` | X11 显示配置文件（用户登录时执行） |
 | `rc.local` | 系统启动背光配置 |
+| `lightdm-session-fix.sh` | LightDM 自动修复脚本（推荐） |
 | `switch-to-dsi.sh` | 快速切换到5寸DSI屏 |
 | `switch-to-hdmi.sh` | 快速切换到HDMI |
 | `set-backlight.sh` | 设置背光亮度 |
@@ -55,13 +56,27 @@ echo 200 > /sys/class/backlight/panel_backlight/brightness
 exit 0
 ```
 
-### 4. 配置 X11 显示比例
+### 4. 配置 X11 显示（二选一）
 
-复制配置文件：
+**方案 A：LightDM 自动修复（推荐，解决重启黑屏问题）**
+
+```bash
+sudo cp lightdm-session-fix.sh /usr/local/bin/
+sudo chmod +x /usr/local/bin/lightdm-session-fix.sh
+sudo tee /etc/lightdm/lightdm.conf.d/99-dsi-session-fix.conf << 'EOF'
+[Seat:*]
+session-setup-script=/usr/local/bin/lightdm-session-fix.sh
+EOF
+```
+
+**方案 B：用户配置文件（~/.xprofile）**
+
 ```bash
 cp xprofile ~/.xprofile
 chmod +x ~/.xprofile
 ```
+
+> **注意**：如果重启后黑屏，请使用方案 A。方案 A 在 LightDM 登录时以用户身份执行 xrandr，比方案 B 更可靠。
 
 ### 5. 重启系统
 
